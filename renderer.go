@@ -12,6 +12,7 @@ import (
 )
 
 type Renderer struct {
+	Root      string
 	Skin      string
 }
 
@@ -49,8 +50,8 @@ func createWikiRenderer(m map[string]interface{}) func(...interface{}) template.
 	}
 }
 
-func NewRenderer(skin string) *Renderer {
-	return &Renderer{Skin:skin}
+func NewRenderer(tmplDir string, skin string) *Renderer {
+	return &Renderer{Root:tmplDir,Skin:skin}
 }
 
 func (r *Renderer) renderTemplate(w io.Writer, tmpl string, web string, p *Page) error {
@@ -58,7 +59,7 @@ func (r *Renderer) renderTemplate(w io.Writer, tmpl string, web string, p *Page)
 	m["Web"] = web
 
 	templates := template.Must(template.New(r.Skin).
-		Funcs(template.FuncMap{"md": createWikiRenderer(m)}).ParseGlob("tmpl/" + r.Skin + "/*.html"))
+		Funcs(template.FuncMap{"md": createWikiRenderer(m)}).ParseGlob(r.Root + "/" + r.Skin + "/*.html"))
 
 	return templates.ExecuteTemplate(w, tmpl+".html", m)
 }

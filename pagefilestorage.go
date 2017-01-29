@@ -3,28 +3,66 @@ package main
 import (
 	"os"
 	"io/ioutil"
-	"log"
-	"io"
+	"gopkg.in/libgit2/git2go.v25"
+	log "github.com/Sirupsen/logrus"
+	"time"
+	"errors"
 )
 
 type FilePageStorage struct {
-	Root string
+	Root        string
+	Repo        *git.Repository
+	Origin      *git.Remote
+	PushOptions *git.PushOptions
 }
 
-func NewFilePageStorage(path string) *FilePageStorage {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		os.Mkdir(path, 0755)
+func NewFilePageStorage(path string, cloneFromGitRepo string, initFromGitRepo string, originGitRepo string) (*FilePageStorage, error) {
+	if initFromGitRepo != "" {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			err := initialiseWikiFromGitRepository(path, initFromGitRepo)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errors.New("Path '" + path + "' already exists, unable to init from '" + initFromGitRepo + "'.")
+		}
 	}
-	return &FilePageStorage{Root:path}
+
+	if cloneFromGitRepo != "" {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			err := initialiseWikiAsCloneFromGitRepository(path, cloneFromGitRepo)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errors.New("Path '" + path + "' already exists, unable to clone from '" + cloneFromGitRepo + "'.")
+		}
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, errors.New("Path '" + path + "' does not exist, please init first.")
+	}
+
+	repo := checkForGitRepo(path)
+
+	if originGitRepo != "" {
+		//configure for push
+		err := configureOriginGitRepository(repo, originGitRepo)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	origin, pushOptions := configureOriginPush(repo)
+	return &FilePageStorage{Root:path, Repo:repo, Origin:origin, PushOptions:pushOptions}, nil
 }
 
 func pageToFilename(root string, web string, title string) string {
-	return root + "/" + web + "/" + title + ".md"
+	return root + "/" + relativePathToPage(web, title)
 }
 
-func (s *FilePageStorage) WritePage(web string, p *Page) error {
-	filename := pageToFilename(s.Root, web, p.Title)
-	return ioutil.WriteFile(filename, p.Body, 0644)
+func relativePathToPage(web string, title string) string {
+	return web + "/" + title + ".md"
 }
 
 func (s *FilePageStorage) ReadPage(web string, title string) (*Page, error) {
@@ -36,92 +74,194 @@ func (s *FilePageStorage) ReadPage(web string, title string) (*Page, error) {
 	return &Page{Title: title, Body:body}, nil
 }
 
+func (s *FilePageStorage) WritePage(web string, p *Page) error {
+	filename := pageToFilename(s.Root, web, p.Title)
+	err := ioutil.WriteFile(filename, p.Body, 0644)
+	if err != nil {
+		return err
+	}
+
+	return commitPage(s, relativePathToPage(web, p.Title))
+}
+
 func (s *FilePageStorage) CreateWeb(web string) error {
-	return CopyDir(s.Root + "/_empty", s.Root + "/" + web)
+	return CopyDir(s.Root+"/_empty", s.Root+"/"+web)
 }
 
-
-// Copies file source to destination dest.
-func CopyFile(source string, dest string) (err error) {
-	sf, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer sf.Close()
-	df, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer df.Close()
-	_, err = io.Copy(df, sf)
-	if err == nil {
-		si, err := os.Stat(source)
+func commitPage(s *FilePageStorage, path string) error {
+	if s.Repo != nil {
+		sig := &git.Signature{
+			Name:  "Guest User",
+			Email: "guest@example.com",
+			When:  time.Now(),
+		}
+		idx, err := s.Repo.Index()
 		if err != nil {
-			err = os.Chmod(dest, si.Mode())
+			return err
+		}
+		err = idx.AddByPath(path) //AddAll
+		if err != nil {
+			return err
+		}
+		err = idx.Write()
+		if err != nil {
+			return err
+		}
+		treeId, err := idx.WriteTree()
+		if err != nil {
+			return err
+		}
+		currentBranch, err := s.Repo.Head()
+		if err != nil {
+			return err
+		}
+		currentTip, err := s.Repo.LookupCommit(currentBranch.Target())
+		if err != nil {
+			return err
+		}
+		tree, err := s.Repo.LookupTree(treeId)
+		if err != nil {
+			return err
+		}
+		message := "Change " + path
+		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
+		if err != nil {
+			return err
 		}
 
-	}
+		log.Info("Made commit " + commitId.String() + ".")
 
-	return
+		if s.Origin != nil {
+			err := s.Origin.Push([]string{"refs/heads/master"}, s.PushOptions)
+			if err != nil {
+				return err
+			}
+			log.Info("Pushed to origin.")
+		}
+	}
+	return nil
 }
 
-// Recursively copies a directory tree, attempting to preserve permissions.
-// Source directory must exist, destination directory must *not* exist.
-func CopyDir(source string, dest string) (err error) {
-
-	// get properties of source dir
-	fi, err := os.Stat(source)
-	if err != nil {
-		return err
-	}
-
-	if !fi.IsDir() {
-		return &CustomError{"Source is not a directory"}
-	}
-
-	// ensure dest dir does not already exist
-
-	_, err = os.Open(dest)
-	if !os.IsNotExist(err) {
-		return &CustomError{"Destination already exists"}
-	}
-
-	// create dest dir
-
-	err = os.MkdirAll(dest, fi.Mode())
-	if err != nil {
-		return err
-	}
-
-	entries, err := ioutil.ReadDir(source)
-
-	for _, entry := range entries {
-
-		sfp := source + "/" + entry.Name()
-		dfp := dest + "/" + entry.Name()
-		if entry.IsDir() {
-			err = CopyDir(sfp, dfp)
+func initialiseWikiFromGitRepository(path string, initFromGitRepo string) error {
+	opts := git.CloneOptions{
+		Bare: false,
+		RemoteCreateCallback: func(r *git.Repository, name, url string) (*git.Remote, git.ErrorCode) {
+			remote, err := r.Remotes.Create("upstream", url)
 			if err != nil {
-				log.Println(err)
+				return nil, git.ErrGeneric
 			}
+
+			return remote, git.ErrOk
+		},
+	}
+
+	_, err := git.Clone(initFromGitRepo, path, &opts)
+	if err == nil {
+		log.Info("Initialised new repository from '" + initFromGitRepo + "' at '" + path + "'.")
+	}
+	return err
+}
+
+func initialiseWikiAsCloneFromGitRepository(path string, cloneFromGitRepo string) error {
+	remoteCallbacks, err := getRemoteCallbacks()
+	if err != nil {
+		return err
+	}
+
+	fetchOptions := &git.FetchOptions{RemoteCallbacks:*remoteCallbacks}
+
+	opts := git.CloneOptions{
+		Bare: false,
+		CheckoutBranch: "master",
+		RemoteCreateCallback: func(r *git.Repository, name, url string) (*git.Remote, git.ErrorCode) {
+			remote, err := r.Remotes.Create("origin", url)
+			if err != nil {
+				return nil, git.ErrGeneric
+			}
+
+			return remote, git.ErrOk
+		},
+		FetchOptions: fetchOptions,
+	}
+
+	log.Info("Cloning...")
+	_, err = git.Clone(cloneFromGitRepo, path, &opts)
+	if err == nil {
+		log.Info("Cloned repository '" + cloneFromGitRepo + "' to '" + path + "'.")
+	}
+	return err
+}
+
+func configureOriginGitRepository(repo *git.Repository, originGitRepo string) error {
+	if repo == nil {
+		return errors.New("Unable to configure origin when data directory is not a git repository.")
+	}
+
+	_, err := repo.Remotes.Create("origin", originGitRepo)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func gitCredentials(username string, passphrase string, keyPath string) (func(string, string, git.CredType) (git.ErrorCode, *git.Cred), error) {
+	errorCode, cred := git.NewCredSshKey(username, keyPath+".pub", keyPath, passphrase)
+
+	if git.ErrorCode(errorCode) != git.ErrOk {
+		return nil, errors.New("Invalid Credentials: " + string(errorCode))
+	}
+	return func(url string, username_from_url string, allowed_types git.CredType) (git.ErrorCode, *git.Cred) {
+		return git.ErrorCode(errorCode), &cred
+	}, nil
+}
+
+func gitCertCheck() (func(*git.Certificate, bool, string) git.ErrorCode) {
+	return func(cert *git.Certificate, valid bool, hostname string) git.ErrorCode {
+		return git.ErrorCode(git.ErrOk)
+	}
+}
+
+func checkForGitRepo(path string) (*git.Repository) {
+	repo, err := git.OpenRepository(path)
+	if err != nil {
+		log.Warn("Data directory is not a git repository.")
+		return nil
+	}
+	return repo
+}
+
+func getRemoteCallbacks() (*git.RemoteCallbacks, error) {
+	credFunc, err := gitCredentials(os.Getenv("GOWIKI_GIT_USERNAME"), os.Getenv("GOWIKI_GIT_PASSPHRASE"), os.Getenv("GOWIKI_GIT_SSH_KEY_PATH"))
+	if err != nil {
+		return nil, err
+	}
+
+	certCheckFunc := gitCertCheck()
+	remoteCallbacks := &git.RemoteCallbacks{
+		CredentialsCallback:     credFunc,
+		CertificateCheckCallback:certCheckFunc,
+	}
+	return remoteCallbacks, nil
+}
+
+func configureOriginPush(repo *git.Repository) (*git.Remote, *git.PushOptions) {
+	if repo == nil {
+		return nil, nil
+	}
+	remote, err := repo.Remotes.Lookup("origin")
+	if err != nil {
+		log.Warn(err)
+		log.Warn("No remote called origin configured to push to.")
+		return nil, nil
+	} else {
+		remoteCallbacks, err := getRemoteCallbacks()
+		if err == nil {
+			pushOptions := &git.PushOptions{RemoteCallbacks:*remoteCallbacks}
+			return remote, pushOptions
 		} else {
-			// perform copy
-			err = CopyFile(sfp, dfp)
-			if err != nil {
-				log.Println(err)
-			}
+			log.Warn("No GOWIKI_GIT credentials provided for Push")
+			log.Warn(err)
+			return remote, nil
 		}
-
 	}
-	return
-}
-
-// A struct for returning custom error messages
-type CustomError struct {
-	What string
-}
-
-// Returns the error message defined in What as a string
-func (e *CustomError) Error() string {
-	return e.What
 }

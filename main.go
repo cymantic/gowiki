@@ -22,16 +22,25 @@ func init() {
 func main() {
 	var ip = flag.Int("port", 8080, "Web server port.")
 	var dataDir = flag.String("data", "data", "Wiki Data Directory")
+	var tmplDir = flag.String("tmpl", "tmpl", "Wiki Templtes Directory")
+	var cloneFromGitRepo = flag.String("clone", "", "Clone from repository")
+	var initFromGitRepo = flag.String("init", "", "Initialise from repository")
+	var originGitRepo = flag.String("origin", "", "Initialise to repository")
 	flag.Parse()
 
-	storage := NewFilePageStorage(*dataDir)
-	renderer := NewRenderer("default")
+	storage, err := NewFilePageStorage(*dataDir, *cloneFromGitRepo, *initFromGitRepo, *originGitRepo)
+	if err != nil {
+		log.Fatal("Can't initialise wiki data!", err)
+		return
+	}
+
+	renderer := NewRenderer(*tmplDir, "default")
 	wiki := NewWiki(renderer, storage)
 
 	port := ":" + strconv.Itoa(*ip)
-	log.Info("starting wiki engine on localhost" + port)
+	log.Info("starting wiki engine on localhost" + port + " from directory " + *dataDir)
 
-	err := wiki.start(port)
+	err = wiki.start(port)
 	if err != nil {
 		log.Error(err)
 	}

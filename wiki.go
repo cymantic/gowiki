@@ -81,6 +81,7 @@ func saveHandler(w http.ResponseWriter, r *http.Request, s PageStorage, web stri
 	p := &Page{Title: title, Body: []byte(body)}
 	err := p.save(web, s)
 	if err != nil {
+		log.Error(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
