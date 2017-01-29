@@ -20,9 +20,18 @@ To push to a remote repo as origin with a (github deploy) key, you must configur
   * `GOWIKI_GIT_PASSPHRASE` 
 
 ### Initial Run
-  * To set the directory for the wiki data pass `-data=<path to data>`
-  * To create the initial wiki data pass `-init=https://github.com/cymantic/gowiki-data.git`
-  * To setup an origin to push changes to pass `-origin=git@github.com:<username>/mywiki-data.git`
+Allows you to start a new empty wiki.
+
+  * Set the directory for the wiki data: `-data=<path to data>`
+  * Create the initial wiki from gowiki-data repo: `-init=https://github.com/cymantic/gowiki-data.git`
+  * Setup an origin to push changes to: `-origin=git@github.com:<username>/mywiki-data.git`
+  
+### Clone Run
+Allows you to start a wiki from an existing gowiki git repo.
+
+  * Set the directory for the wiki data: `-data=<path to data>`
+  * Clone from an existing gowiki data repo: `-clone=git@github.com:<username>/mywiki-data.git`
+  
   
 ## Using without Git
 Copy the files from `https://github.com/cymantic/gowiki-data.git` to the data directory.
