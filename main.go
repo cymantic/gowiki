@@ -31,5 +31,8 @@ func main() {
 	port := ":" + strconv.Itoa(*ip)
 	log.Info("starting wiki engine on localhost" + port)
 
-	wiki.start(port)
+	err := wiki.start(port)
+	if err != nil {
+		log.Error(err)
+	}
 }
