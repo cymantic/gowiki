@@ -131,15 +131,20 @@ func commitPage(s *FilePageStorage, path string) error {
 
 		log.Info("Made commit " + commitId.String() + ".")
 
-		if s.Origin != nil {
-			err := s.Origin.Push([]string{"refs/heads/master"}, s.PushOptions)
-			if err != nil {
-				return err
-			}
+		go pushToOrigin(s)
+	}
+	return nil
+}
+
+func pushToOrigin(s *FilePageStorage) {
+	if s.Origin != nil {
+		err := s.Origin.Push([]string{"refs/heads/master"}, s.PushOptions)
+		if err != nil {
+			log.Error("Unable to push to origin: ", err)
+		} else {
 			log.Info("Pushed to origin.")
 		}
 	}
-	return nil
 }
 
 func initialiseWikiFromGitRepository(path string, initFromGitRepo string) error {
@@ -171,7 +176,7 @@ func initialiseWikiAsCloneFromGitRepository(path string, cloneFromGitRepo string
 	fetchOptions := &git.FetchOptions{RemoteCallbacks:*remoteCallbacks}
 
 	opts := git.CloneOptions{
-		Bare: false,
+		Bare:           false,
 		CheckoutBranch: "master",
 		RemoteCreateCallback: func(r *git.Repository, name, url string) (*git.Remote, git.ErrorCode) {
 			remote, err := r.Remotes.Create("origin", url)
