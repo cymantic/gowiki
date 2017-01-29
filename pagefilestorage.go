@@ -123,7 +123,7 @@ func commitPage(s *FilePageStorage, path string) error {
 		if err != nil {
 			return err
 		}
-		message := "Change " + path
+		message := "Changed " + path
 		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
 		if err != nil {
 			return err
@@ -197,10 +197,22 @@ func configureOriginGitRepository(repo *git.Repository, originGitRepo string) er
 		return errors.New("Unable to configure origin when data directory is not a git repository.")
 	}
 
-	_, err := repo.Remotes.Create("origin", originGitRepo)
+	origin, err := repo.Remotes.Create("origin", originGitRepo)
 	if err != nil {
 		return err
 	}
+
+	remoteCallbacks, err := getRemoteCallbacks()
+	if err != nil {
+		return err
+	}
+
+	pushOptions := &git.PushOptions{RemoteCallbacks:*remoteCallbacks}
+	err = origin.Push([]string{"refs/heads/master"}, pushOptions)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

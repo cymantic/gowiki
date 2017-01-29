@@ -30,7 +30,7 @@ func main() {
 
 	storage, err := NewFilePageStorage(*dataDir, *cloneFromGitRepo, *initFromGitRepo, *originGitRepo)
 	if err != nil {
-		log.Fatal("Can't initialise wiki data!", err)
+		log.Fatal("Can't initialise wiki data - ", err)
 		return
 	}
 
@@ -38,10 +38,10 @@ func main() {
 	wiki := NewWiki(renderer, storage)
 
 	port := ":" + strconv.Itoa(*ip)
-	log.Info("starting wiki engine on localhost" + port + " from directory " + *dataDir)
+	log.Info("starting wiki engine on localhost" + port + " from directory " + *dataDir + ".")
 
 	err = wiki.start(port)
 	if err != nil {
-		log.Error(err)
+		log.Fatal(err)
 	}
 }
