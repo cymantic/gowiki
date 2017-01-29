@@ -22,7 +22,11 @@ func wikiLinkReplacer(in []byte) []byte {
 	m := wikiLinkFinder.FindSubmatch(in)
 	if m != nil && len(m) == 4 {
 		if m[1] != nil {
-			return m[3]
+			if m[2] == nil {
+				return m[3]
+			} else {
+				return []byte(string(m[2]) + "." + string(m[3]))
+			}
 		} else if m[2] == nil {
 			return []byte("[" + string(m[3]) + "](" + string(m[3]) + ")")
 		} else {

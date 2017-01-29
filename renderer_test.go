@@ -6,6 +6,7 @@ func TestGenerateWikiLinks(t *testing.T) {
 	validateGenerateWikiLinks(t, "!WikiLink", "WikiLink")
 	validateGenerateWikiLinks(t, "WikiLink", "[WikiLink](WikiLink)")
 	validateGenerateWikiLinks(t, "Web.WikiLink", "[Web.WikiLink](../Web/WikiLink)")
+	validateGenerateWikiLinks(t, "!Web.WikiLink", "Web.WikiLink")
 }
 func validateGenerateWikiLinks(t *testing.T, input string, expected string) {
 	in := []byte(input)
