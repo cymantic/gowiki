@@ -53,7 +53,7 @@ func NewFilePageStorage(path string, cloneFromGitRepo string, initFromGitRepo st
 		}
 	}
 
-	origin, pushOptions := configureOriginPush(repo)
+	origin, pushOptions := configureOrigin(repo)
 	return &FilePageStorage{Root:path, Repo:repo, Origin:origin, PushOptions:pushOptions}, nil
 }
 
@@ -134,6 +134,141 @@ func commitPage(s *FilePageStorage, path string) error {
 		go pushToOrigin(s)
 	}
 	return nil
+}
+
+func pullWikiData(repo *git.Repository, remote *git.Remote) {
+	remoteCallbacks, err := getRemoteCallbacks()
+	if err != nil {
+		log.Warn(err)
+		return
+	}
+
+	fetchOptions := &git.FetchOptions{RemoteCallbacks:*remoteCallbacks}
+
+	if err := remote.Fetch([]string{}, fetchOptions, ""); err != nil {
+		log.Warn(err)
+		return
+	}
+
+	remoteBranch, err := repo.References.Lookup("refs/remotes/origin/master")
+	if err != nil {
+		log.Warn(err)
+		return
+	}
+
+	remoteBranchID := remoteBranch.Target()
+	annotatedCommit, err := repo.AnnotatedCommitFromRef(remoteBranch)
+	if err != nil {
+		log.Warn(err)
+		return
+	}
+	mergeHeads := make([]*git.AnnotatedCommit, 1)
+	mergeHeads[0] = annotatedCommit
+	analysis, _, err := repo.MergeAnalysis(mergeHeads)
+	if err != nil {
+		log.Warn(err)
+		return
+	}
+
+	// Get repo head
+	head, err := repo.Head()
+	if err != nil {
+		log.Warn(err)
+		return
+	}
+
+	if analysis & git.MergeAnalysisUpToDate != 0 {
+		log.Info("Up to date with origin.")
+		return
+	}  else if analysis & git.MergeAnalysisNormal != 0 {
+		// Just merge changes
+		if err := repo.Merge([]*git.AnnotatedCommit{annotatedCommit}, nil, nil); err != nil {
+			log.Warn(err)
+			return
+		}
+		// Check for conflicts
+		index, err := repo.Index()
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		if index.HasConflicts() {
+			log.Warn("Conflicts encountered. Please resolve them.")
+			return
+		}
+
+		// Make the merge commit
+		sig, err := repo.DefaultSignature()
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		// Get Write Tree
+		treeId, err := index.WriteTree()
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		tree, err := repo.LookupTree(treeId)
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		localCommit, err := repo.LookupCommit(head.Target())
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		remoteCommit, err := repo.LookupCommit(remoteBranchID)
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		repo.CreateCommit("HEAD", sig, sig, "", tree, localCommit, remoteCommit)
+
+		// Clean up
+		repo.StateCleanup()
+		log.Info("Merged changes from remote origin.")
+	} else if analysis & git.MergeAnalysisFastForward != 0 {
+		// Fast-forward changes
+		// Get remote tree
+		remoteTree, err := repo.LookupTree(remoteBranchID)
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		// Checkout
+		if err := repo.CheckoutTree(remoteTree, nil); err != nil {
+			log.Warn(err)
+			return
+		}
+
+		branchRef, err := repo.References.Lookup("refs/heads/master")
+		if err != nil {
+			log.Warn(err)
+			return
+		}
+
+		// Point branch to the object
+		branchRef.SetTarget(remoteBranchID, "")
+		if _, err := head.SetTarget(remoteBranchID, ""); err != nil {
+			log.Warn(err)
+			return
+		}
+		log.Info("Fast forward merged changes from remote origin.")
+	} else {
+		log.Warnf("Unexpected merge analysis result %d", analysis)
+		return
+	}
+
+	return
 }
 
 func pushToOrigin(s *FilePageStorage) {
@@ -261,7 +396,7 @@ func getRemoteCallbacks() (*git.RemoteCallbacks, error) {
 	return remoteCallbacks, nil
 }
 
-func configureOriginPush(repo *git.Repository) (*git.Remote, *git.PushOptions) {
+func configureOrigin(repo *git.Repository) (*git.Remote, *git.PushOptions) {
 	if repo == nil {
 		return nil, nil
 	}
@@ -274,6 +409,7 @@ func configureOriginPush(repo *git.Repository) (*git.Remote, *git.PushOptions) {
 		remoteCallbacks, err := getRemoteCallbacks()
 		if err == nil {
 			pushOptions := &git.PushOptions{RemoteCallbacks:*remoteCallbacks}
+			go pullWikiData(repo, remote);
 			return remote, pushOptions
 		} else {
 			log.Warn("No GOWIKI_GIT credentials provided for Push")

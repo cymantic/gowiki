@@ -33,6 +33,9 @@ Allows you to start a wiki from an existing gowiki git repo.
   * Clone from an existing gowiki data repo: `-clone=git@github.com:<username>/mywiki-data.git`
   
   
+### Update Run
+After init or clone, when just starting `gowiki`, if there is an origin, `gowiki` will pull the latest changes, but cannot resolve merge conflicts
+  
 ## Using without Git
 Copy the files from `https://github.com/cymantic/gowiki-data.git` to the data directory.
 
