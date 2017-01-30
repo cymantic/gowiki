@@ -85,7 +85,60 @@ func (s *FilePageStorage) WritePage(web string, p *Page) error {
 }
 
 func (s *FilePageStorage) CreateWeb(web string) error {
-	return CopyDir(s.Root+"/_empty", s.Root+"/"+web)
+	err := CopyDir(s.Root+"/_empty", s.Root+"/"+web)
+	if err != nil {
+		return err
+	}
+
+	return commitWeb(s, web)
+}
+
+func commitWeb(s *FilePageStorage, web string) error {
+	if s.Repo != nil {
+		sig := &git.Signature{
+			Name:  "Guest User",
+			Email: "guest@example.com",
+			When:  time.Now(),
+		}
+		idx, err := s.Repo.Index()
+		if err != nil {
+			return err
+		}
+		err = idx.AddAll([]string{web}, git.IndexAddDefault, nil)
+		if err != nil {
+			return err
+		}
+		err = idx.Write()
+		if err != nil {
+			return err
+		}
+		treeId, err := idx.WriteTree()
+		if err != nil {
+			return err
+		}
+		currentBranch, err := s.Repo.Head()
+		if err != nil {
+			return err
+		}
+		currentTip, err := s.Repo.LookupCommit(currentBranch.Target())
+		if err != nil {
+			return err
+		}
+		tree, err := s.Repo.LookupTree(treeId)
+		if err != nil {
+			return err
+		}
+		message := web + " created"
+		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
+		if err != nil {
+			return err
+		}
+
+		log.Info("Made commit " + commitId.String() + ".")
+
+		go pushToOrigin(s)
+	}
+	return nil
 }
 
 func commitPage(s *FilePageStorage, path string) error {
@@ -123,7 +176,7 @@ func commitPage(s *FilePageStorage, path string) error {
 		if err != nil {
 			return err
 		}
-		message := "Changed " + path
+		message := path + " updated"
 		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
 		if err != nil {
 			return err
