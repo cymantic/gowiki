@@ -5,8 +5,10 @@ A wiki you can run locally, backed up with a git repo for versioning.
 ## TL;DR
 
 ```
-./gowiki -data=/var/gowiki/data -init=https://github.com/cymantic/gowiki-data.git
+ENV=PROD ./gowiki -data=/var/gowiki/data -init=https://github.com/cymantic/gowiki-data.git
 ```
+
+Open browser and go to `http://localhost:8080/`
 
 ## Installation
 
@@ -40,7 +42,6 @@ After init or clone, when just starting `gowiki`, if there is an origin, `gowiki
 Copy the files from `https://github.com/cymantic/gowiki-data.git` to the data directory.
 
 Start with `./gowiki -data=/var/gowiki/data`
-
 
 [git2go]: https://github.com/libgit2/git2go
 [libgit2]: https://libgit2.github.com/
