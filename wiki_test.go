@@ -2,9 +2,8 @@ package main
 
 import (
 	"net/http"
-	"testing"
 	"net/http/httptest"
-	"errors"
+	"testing"
 )
 
 func TestParseWebAndTitleFromURL(t *testing.T) {
@@ -22,55 +21,24 @@ func TestParseWebAndTitleFromURL(t *testing.T) {
 	}
 }
 
-type fakePageStorageFound struct {
-}
-
-func (t *fakePageStorageFound) WritePage(web string, p *Page) error {
-	return nil
-}
-
-func (t *fakePageStorageFound) ReadPage(web string, title string) (*Page, error) {
-	return &Page{Title:title, Body:[]byte("Hello, world!")}, nil
-}
-
-func (t *fakePageStorageFound) CreateWeb(web string) error {
-	return nil
-}
-
-
-type fakePageStorageNotFound struct {
-}
-
-func (t *fakePageStorageNotFound) WritePage(web string, p *Page) error {
-	return nil
-}
-
-func (t *fakePageStorageNotFound) ReadPage(web string, title string) (*Page, error) {
-	return nil, errors.New("no file")
-}
-
-func (t *fakePageStorageNotFound) CreateWeb(web string) error {
-	return nil
-}
-
-func makeViewRequest(fakeStorage PageStorage) *httptest.ResponseRecorder {
+func makeViewRequest(wikiRepository WikiRepository) *httptest.ResponseRecorder {
 	req, _ := http.NewRequest("GET", "/view/Main/WebPage", nil)
 	rr := httptest.NewRecorder()
-	renderer := NewRenderer("default")
-	handler := http.HandlerFunc(makeHandler(viewHandler, fakeStorage, renderer))
+	renderer := NewTemplateRenderer("tmpl", "default")
+	handler := http.HandlerFunc(makeHandler(viewHandler, wikiRepository, renderer))
 	handler.ServeHTTP(rr, req)
 	return rr
 }
 
 func TestViewFound(t *testing.T) {
-	rr := makeViewRequest(&fakePageStorageFound{})
+	rr := makeViewRequest(fakeWikiRepositoryWithFile)
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("expected '%s' got '%s'", http.StatusOK, status)
 	}
 }
 
 func TestViewNotFound(t *testing.T) {
-	rr := makeViewRequest(&fakePageStorageNotFound{})
+	rr := makeViewRequest(fakeWikiRepositoryNoFile)
 	if status := rr.Code; status != http.StatusFound {
 		t.Errorf("expected %v got %v", http.StatusFound, status)
 	}

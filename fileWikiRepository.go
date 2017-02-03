@@ -1,22 +1,23 @@
 package main
 
 import (
-	"os"
-	"io/ioutil"
-	"gopkg.in/libgit2/git2go.v25"
-	log "github.com/Sirupsen/logrus"
-	"time"
 	"errors"
+	log "github.com/Sirupsen/logrus"
+	"gopkg.in/libgit2/git2go.v25"
+	"io/ioutil"
+	"os"
+	"time"
+	"strings"
 )
 
-type FilePageStorage struct {
+type FileWikiRepository struct {
 	Root        string
 	Repo        *git.Repository
 	Origin      *git.Remote
 	PushOptions *git.PushOptions
 }
 
-func NewFilePageStorage(path string, cloneFromGitRepo string, initFromGitRepo string, originGitRepo string) (*FilePageStorage, error) {
+func NewFileWikiRepository(path string, cloneFromGitRepo string, initFromGitRepo string, originGitRepo string) (*FileWikiRepository, error) {
 	if initFromGitRepo != "" {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			err := initialiseWikiFromGitRepository(path, initFromGitRepo)
@@ -54,7 +55,7 @@ func NewFilePageStorage(path string, cloneFromGitRepo string, initFromGitRepo st
 	}
 
 	origin, pushOptions := configureOrigin(repo)
-	return &FilePageStorage{Root:path, Repo:repo, Origin:origin, PushOptions:pushOptions}, nil
+	return &FileWikiRepository{Root: path, Repo: repo, Origin: origin, PushOptions: pushOptions}, nil
 }
 
 func pageToFilename(root string, web string, title string) string {
@@ -65,42 +66,57 @@ func relativePathToPage(web string, title string) string {
 	return web + "/" + title + ".md"
 }
 
-func (s *FilePageStorage) ReadPage(web string, title string) (*Page, error) {
-	filename := pageToFilename(s.Root, web, title)
+func (r *FileWikiRepository) ReadPage(web string, title string) (*Page, error) {
+	filename := pageToFilename(r.Root, web, title)
 	body, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return &Page{Title: title, Body:body}, nil
+	return &Page{Title: title, Body: body}, nil
 }
 
-func (s *FilePageStorage) WritePage(web string, p *Page) error {
-	filename := pageToFilename(s.Root, web, p.Title)
+func (r *FileWikiRepository) WritePage(web string, p *Page) error {
+	filename := pageToFilename(r.Root, web, p.Title)
 	err := ioutil.WriteFile(filename, p.Body, 0644)
 	if err != nil {
 		return err
 	}
 
-	return commitPage(s, relativePathToPage(web, p.Title))
+	return commitPage(r, relativePathToPage(web, p.Title))
 }
 
-func (s *FilePageStorage) CreateWeb(web string) error {
-	err := CopyDir(s.Root+"/_empty", s.Root+"/"+web)
+func (r *FileWikiRepository) CreateWeb(web string) (*Web, error) {
+	err := CopyDir(r.Root+"/_empty", r.Root+"/"+web)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return commitWeb(s, web)
+	go commitWeb(r, web)
+
+	//TODO... create web with properties?
+	return &Web{Name:web}, nil
 }
 
-func commitWeb(s *FilePageStorage, web string) error {
-	if s.Repo != nil {
+func (r *FileWikiRepository) LoadWebs() map[string]*Web {
+	files, _ := ioutil.ReadDir(r.Root)
+	m := map[string]*Web{}
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), "_") || strings.HasPrefix(f.Name(), ".") {
+			continue
+		}
+		m[f.Name()] = &Web{Name:f.Name()}
+	}
+	return m
+}
+
+func commitWeb(r *FileWikiRepository, web string) error {
+	if r.Repo != nil {
 		sig := &git.Signature{
 			Name:  "Guest User",
 			Email: "guest@example.com",
 			When:  time.Now(),
 		}
-		idx, err := s.Repo.Index()
+		idx, err := r.Repo.Index()
 		if err != nil {
 			return err
 		}
@@ -116,39 +132,39 @@ func commitWeb(s *FilePageStorage, web string) error {
 		if err != nil {
 			return err
 		}
-		currentBranch, err := s.Repo.Head()
+		currentBranch, err := r.Repo.Head()
 		if err != nil {
 			return err
 		}
-		currentTip, err := s.Repo.LookupCommit(currentBranch.Target())
+		currentTip, err := r.Repo.LookupCommit(currentBranch.Target())
 		if err != nil {
 			return err
 		}
-		tree, err := s.Repo.LookupTree(treeId)
+		tree, err := r.Repo.LookupTree(treeId)
 		if err != nil {
 			return err
 		}
 		message := web + " created"
-		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
+		commitId, err := r.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
 		if err != nil {
 			return err
 		}
 
 		log.Info("Made commit " + commitId.String() + ".")
 
-		go pushToOrigin(s)
+		go pushToOrigin(r)
 	}
 	return nil
 }
 
-func commitPage(s *FilePageStorage, path string) error {
-	if s.Repo != nil {
+func commitPage(r *FileWikiRepository, path string) error {
+	if r.Repo != nil {
 		sig := &git.Signature{
 			Name:  "Guest User",
 			Email: "guest@example.com",
 			When:  time.Now(),
 		}
-		idx, err := s.Repo.Index()
+		idx, err := r.Repo.Index()
 		if err != nil {
 			return err
 		}
@@ -164,27 +180,27 @@ func commitPage(s *FilePageStorage, path string) error {
 		if err != nil {
 			return err
 		}
-		currentBranch, err := s.Repo.Head()
+		currentBranch, err := r.Repo.Head()
 		if err != nil {
 			return err
 		}
-		currentTip, err := s.Repo.LookupCommit(currentBranch.Target())
+		currentTip, err := r.Repo.LookupCommit(currentBranch.Target())
 		if err != nil {
 			return err
 		}
-		tree, err := s.Repo.LookupTree(treeId)
+		tree, err := r.Repo.LookupTree(treeId)
 		if err != nil {
 			return err
 		}
 		message := path + " updated"
-		commitId, err := s.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
+		commitId, err := r.Repo.CreateCommit("HEAD", sig, sig, message, tree, currentTip)
 		if err != nil {
 			return err
 		}
 
 		log.Info("Made commit " + commitId.String() + ".")
 
-		go pushToOrigin(s)
+		go pushToOrigin(r)
 	}
 	return nil
 }
@@ -196,7 +212,7 @@ func pullWikiData(repo *git.Repository, remote *git.Remote) {
 		return
 	}
 
-	fetchOptions := &git.FetchOptions{RemoteCallbacks:*remoteCallbacks}
+	fetchOptions := &git.FetchOptions{RemoteCallbacks: *remoteCallbacks}
 
 	if err := remote.Fetch([]string{}, fetchOptions, ""); err != nil {
 		log.Warn(err)
@@ -230,10 +246,10 @@ func pullWikiData(repo *git.Repository, remote *git.Remote) {
 		return
 	}
 
-	if analysis & git.MergeAnalysisUpToDate != 0 {
+	if analysis&git.MergeAnalysisUpToDate != 0 {
 		log.Info("Up to date with origin.")
 		return
-	}  else if analysis & git.MergeAnalysisNormal != 0 {
+	} else if analysis&git.MergeAnalysisNormal != 0 {
 		// Just merge changes
 		if err := repo.Merge([]*git.AnnotatedCommit{annotatedCommit}, nil, nil); err != nil {
 			log.Warn(err)
@@ -288,7 +304,7 @@ func pullWikiData(repo *git.Repository, remote *git.Remote) {
 		// Clean up
 		repo.StateCleanup()
 		log.Info("Merged changes from remote origin.")
-	} else if analysis & git.MergeAnalysisFastForward != 0 {
+	} else if analysis&git.MergeAnalysisFastForward != 0 {
 		// Fast-forward changes
 		// Get remote tree
 		remoteTree, err := repo.LookupTree(remoteBranchID)
@@ -324,9 +340,9 @@ func pullWikiData(repo *git.Repository, remote *git.Remote) {
 	return
 }
 
-func pushToOrigin(s *FilePageStorage) {
-	if s.Origin != nil {
-		err := s.Origin.Push([]string{"refs/heads/master"}, s.PushOptions)
+func pushToOrigin(r *FileWikiRepository) {
+	if r.Origin != nil {
+		err := r.Origin.Push([]string{"refs/heads/master"}, r.PushOptions)
 		if err != nil {
 			log.Error("Unable to push to origin: ", err)
 		} else {
@@ -361,7 +377,7 @@ func initialiseWikiAsCloneFromGitRepository(path string, cloneFromGitRepo string
 		return err
 	}
 
-	fetchOptions := &git.FetchOptions{RemoteCallbacks:*remoteCallbacks}
+	fetchOptions := &git.FetchOptions{RemoteCallbacks: *remoteCallbacks}
 
 	opts := git.CloneOptions{
 		Bare:           false,
@@ -400,7 +416,7 @@ func configureOriginGitRepository(repo *git.Repository, originGitRepo string) er
 		return err
 	}
 
-	pushOptions := &git.PushOptions{RemoteCallbacks:*remoteCallbacks}
+	pushOptions := &git.PushOptions{RemoteCallbacks: *remoteCallbacks}
 	err = origin.Push([]string{"refs/heads/master"}, pushOptions)
 	if err != nil {
 		return err
@@ -420,13 +436,13 @@ func gitCredentials(username string, passphrase string, keyPath string) (func(st
 	}, nil
 }
 
-func gitCertCheck() (func(*git.Certificate, bool, string) git.ErrorCode) {
+func gitCertCheck() func(*git.Certificate, bool, string) git.ErrorCode {
 	return func(cert *git.Certificate, valid bool, hostname string) git.ErrorCode {
 		return git.ErrorCode(git.ErrOk)
 	}
 }
 
-func checkForGitRepo(path string) (*git.Repository) {
+func checkForGitRepo(path string) *git.Repository {
 	repo, err := git.OpenRepository(path)
 	if err != nil {
 		log.Warn("Data directory is not a git repository.")
@@ -443,8 +459,8 @@ func getRemoteCallbacks() (*git.RemoteCallbacks, error) {
 
 	certCheckFunc := gitCertCheck()
 	remoteCallbacks := &git.RemoteCallbacks{
-		CredentialsCallback:     credFunc,
-		CertificateCheckCallback:certCheckFunc,
+		CredentialsCallback:      credFunc,
+		CertificateCheckCallback: certCheckFunc,
 	}
 	return remoteCallbacks, nil
 }
@@ -461,8 +477,8 @@ func configureOrigin(repo *git.Repository) (*git.Remote, *git.PushOptions) {
 	} else {
 		remoteCallbacks, err := getRemoteCallbacks()
 		if err == nil {
-			pushOptions := &git.PushOptions{RemoteCallbacks:*remoteCallbacks}
-			go pullWikiData(repo, remote);
+			pushOptions := &git.PushOptions{RemoteCallbacks: *remoteCallbacks}
+			go pullWikiData(repo, remote)
 			return remote, pushOptions
 		} else {
 			log.Warn("No GOWIKI_GIT credentials provided for Push")

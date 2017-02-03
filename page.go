@@ -1,21 +1,9 @@
 package main
 
-type Page struct {
-	Title string
-	Body  []byte
+func (p *Page) save(wikiRepository WikiRepository, web string) error {
+	return wikiRepository.WritePage(web, p)
 }
 
-type PageStorage interface {
-	WritePage(web string, p *Page) error
-	ReadPage(web string, title string) (*Page, error)
-	CreateWeb(web string) error
+func loadPage(wikiRepository WikiRepository, web string, title string) (*Page, error) {
+	return wikiRepository.ReadPage(web, title)
 }
-
-func (p *Page) save(web string, s PageStorage) error {
-	return s.WritePage(web, p)
-}
-
-func loadPage(s PageStorage, web string, title string) (*Page, error) {
-	return s.ReadPage(web, title)
-}
-

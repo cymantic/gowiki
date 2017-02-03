@@ -1,5 +1,12 @@
 <h1>{{.Title}}</h1>
 
-<p>[<a href="/edit/{{.Web}}/{{.Title}}">edit</a>]</p>
+<p>[<a href="../../edit/{{.Web}}/{{.Title}}">edit</a>]</p>
 
 <div>{{.Body | md}}</div>
+
+
+<ul>
+{{ range $key, $value := .Webs }}
+    <li><a href="../../view/{{$key}}/WebHome">{{ $key }}</a></li>
+{{ end }}
+</ul>

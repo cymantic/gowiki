@@ -28,14 +28,14 @@ func main() {
 	var originGitRepo = flag.String("origin", "", "Initialise to repository")
 	flag.Parse()
 
-	storage, err := NewFilePageStorage(*dataDir, *cloneFromGitRepo, *initFromGitRepo, *originGitRepo)
+	wikiRepository, err := NewFileWikiRepository(*dataDir, *cloneFromGitRepo, *initFromGitRepo, *originGitRepo)
 	if err != nil {
 		log.Fatal("Can't initialise wiki data - ", err)
 		return
 	}
 
-	renderer := NewRenderer(*tmplDir, "default")
-	wiki := NewWiki(renderer, storage)
+	templateRenderer := NewTemplateRenderer(*tmplDir, "default")
+	wiki := NewWiki(wikiRepository, templateRenderer)
 
 	port := ":" + strconv.Itoa(*ip)
 	log.Info("starting wiki engine on localhost" + port + " from directory " + *dataDir + ".")

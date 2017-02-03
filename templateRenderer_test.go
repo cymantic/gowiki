@@ -22,8 +22,8 @@ func TestMatchAndReplaceWikiLinks(t *testing.T) {
 }
 func validateMatchAndReplace(t *testing.T, input string, expected string) {
 	in := []byte(input)
-	output := string(wikiLinkFinder.ReplaceAllFunc(in, wikiLinkReplacer))
+	output := string(wikiLinkMatcher.ReplaceAllFunc(in, wikiLinkReplacer))
 	if output != expected {
-		t.Errorf("expected '%s' got '%s'", expected, output);
+		t.Errorf("expected '%s' got '%s'", expected, output)
 	}
 }

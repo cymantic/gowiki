@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
+	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
-	log "github.com/Sirupsen/logrus"
+	"os"
 )
 
 // Copies file source to destination dest.
